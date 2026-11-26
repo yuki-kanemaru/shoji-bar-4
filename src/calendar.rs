@@ -14,6 +14,7 @@ use std::cell::Cell;
 use std::time::{Duration, Instant};
 
 pub fn panel() -> Div {
+    let selected = signal(None::<(i32, u32, u32)>);
     div()
         .flex()
         .flex_col()
@@ -26,9 +27,8 @@ pub fn panel() -> Div {
             s.bg(c.surface_container).text_color(c.on_surface)
         })
         .child(settle_in(0, header()))
-        .child(settle_in(1, month_view()))
-        .child(settle_in(2, crate::schedule::agenda_section()))
-
+        .child(settle_in(1, month_view(selected)))
+        .child(settle_in(2, crate::schedule::agenda_section(selected)))
 }
 
 /// The time with its seconds rolling, and the day.
@@ -157,7 +157,7 @@ fn pop_in(order: u32, node: Div) -> Div {
 /// The month: its name between the arrows to the ones around it, the days of the week, and its
 /// weeks, which slide over when it changes. The wheel goes through the months too, and the name
 /// goes back to this one.
-fn month_view() -> Div {
+fn month_view(selected: Signal<Option<(i32, u32, u32)>>) -> Div {
     let today = memo(|| {
         let t = local_time(Every::Minute);
         Date::new(t.year, t.month as u32, t.day as u32)
@@ -184,7 +184,10 @@ fn month_view() -> Div {
             .flex_1()
             .h(32.0)
             .rounded(16.0_f32)
-            .on_click(move |_| shown.set(untrack(|| this_month.get())))
+            .on_click(move |_| {
+                shown.set(untrack(|| this_month.get()));
+                selected.set(None);
+            })
             .child(
                 for_each(
                     move || vec![shown.get()],
@@ -269,7 +272,7 @@ fn month_view() -> Div {
     // Only the month it shows first comes in one day after another.
     let first = Cell::new(true);
     let strip = for_each(visible, |m| *m, move |m| {
-        weeks(m, today, first.replace(false))
+        weeks(m, today, selected, first.replace(false))
             .absolute()
             .top(0.0)
             .w(GRID_W)
@@ -319,7 +322,7 @@ fn month_view() -> Div {
 }
 
 /// The six weeks of a month. With `cascade`, the days come in one after another.
-fn weeks(month: i32, today: Memo<Date>, cascade: bool) -> Div {
+fn weeks(month: i32, today: Memo<Date>, selected: Signal<Option<(i32, u32, u32)>>, cascade: bool) -> Div {
     let all = days_shown(month);
     div().flex().flex_col().children(
         all.chunks(7)
@@ -329,7 +332,7 @@ fn weeks(month: i32, today: Memo<Date>, cascade: bool) -> Div {
                     week.iter()
                         .enumerate()
                         .map(|(column, &(date, of_month))| {
-                            let cell = day(date, of_month, today);
+                            let cell = day(date, of_month, today, selected);
                             if cascade {
                                 // After the days of the week.
                                 pop_in((row + 1 + column) as u32, cell)
@@ -346,8 +349,18 @@ fn weeks(month: i32, today: Memo<Date>, cascade: bool) -> Div {
 
 /// A day: faint when it is of the month before or after, on a cookie when it is today, which
 /// turns a little under the pointer.
-fn day(date: Date, of_month: bool, today: Memo<Date>) -> Div {
+fn day(
+    date: Date,
+    of_month: bool,
+    today: Memo<Date>,
+    selected: Signal<Option<(i32, u32, u32)>>,
+) -> Div {
     let is_today = memo(move || today.get() == date);
+    let is_selected = memo(move || {
+        let key = (date.year, date.month, date.day);
+        selected.get() == Some(key) && !is_today.get()
+    });
+    let dots = memo(move || crate::schedule::day_event_colors(date.year, date.month, date.day));
     let hovered = signal(false);
     let number = TextStyle {
         weight: 500,
@@ -368,6 +381,14 @@ fn day(date: Date, of_month: bool, today: Memo<Date>) -> Div {
         // Its own stacking context, for the number to go over the cookie.
         .z_index(0)
         .on_hover(move |h| hovered.set(h))
+        .on_click(move |_| {
+            let key = (date.year, date.month, date.day);
+            if untrack(|| is_today.get()) {
+                selected.set(None);
+            } else {
+                selected.set(Some(key));
+            }
+        })
         .child(
             show(
                 move || is_today.get(),
@@ -389,15 +410,69 @@ fn day(date: Date, of_month: bool, today: Memo<Date>) -> Div {
             .exit(|s| s.opacity(0.0_f32).scale(0.3_f32))
             .transition(overshoot(400)),
         )
+        .child(
+            show(
+                move || is_selected.get(),
+                move || {
+                    div()
+                        .absolute()
+                        .size(TODAY)
+                        .rounded(TODAY / 2.0)
+                        .left((CELL_W - TODAY) / 2.0)
+                        .top((CELL_H - TODAY) / 2.0)
+                        .dyn_style(|s| s.bg(colors().primary_container))
+                },
+            )
+            .enter(|s| s.opacity(0.0_f32).scale(0.6_f32))
+            .exit(|s| s.opacity(0.0_f32).scale(0.6_f32))
+            .transition(emphasized(180)),
+        )
         // Over the cookie.
         .child(div().relative().z_index(1).child(dyn_view(move || {
-            let style = if is_today.get() { bold } else { number };
+            let style = if is_today.get() || is_selected.get() {
+                bold
+            } else {
+                number
+            };
             style.apply(div().child(date.day.to_string()))
         })))
+        .child(
+            div()
+                .absolute()
+                .bottom(2.0)
+                .left(0.0)
+                .right(0.0)
+                .z_index(2)
+                .pointer_events_none()
+                .flex()
+                .flex_row()
+                .items_center()
+                .justify_center()
+                .gap(3.0_f32)
+                .child(dyn_view(move || {
+                    let list = dots.get();
+                    let on_today = is_today.get();
+                    let on_primary = colors().on_primary;
+                    div()
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap(3.0_f32)
+                        .children(list.into_iter().map(move |col| {
+                            div()
+                                .size(4.0)
+                                .rounded(2.0_f32)
+                                .bg(if on_today { on_primary } else { col })
+                        }))
+                        .into_view()
+                })),
+        )
         .dyn_style(move |s| {
             let c = colors();
             s.text_color(if is_today.get() {
                 c.on_primary
+            } else if is_selected.get() {
+                c.on_primary_container
             } else if of_month {
                 c.on_surface
             } else {

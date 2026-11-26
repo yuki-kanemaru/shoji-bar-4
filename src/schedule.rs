@@ -2,8 +2,8 @@
 //! - `~/.local/state/calendar-bar/events.json`
 //! - `~/.config/calendar-bar/genres.json`
 //!
-//! Provides the inline next-event widget inside the top bar clock pill and the calendar panel's
-//! agenda + filter card.
+//! Provides the inline next-event widget inside the top bar clock pill, event dots for the month
+//! grid, the calendar panel's agenda + filter card, and a one-click Google OAuth trigger.
 
 use crate::theme::{TextStyle, colors, is_dark};
 use crate::ui::*;
@@ -15,6 +15,7 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const FRESHNESS_SECS: i64 = 15 * 60;
@@ -107,6 +108,14 @@ thread_local! {
 
 fn events_path() -> PathBuf {
     home_dir().join(".local/state/calendar-bar/events.json")
+}
+
+fn auth_session_path() -> PathBuf {
+    home_dir().join(".local/state/calendar-bar/auth-session.json")
+}
+
+fn calendar_bar_script() -> PathBuf {
+    home_dir().join(".local/share/calendar-bar/calendar_bar.py")
 }
 
 fn genres_path() -> PathBuf {
@@ -320,6 +329,88 @@ fn show_all_calendars() {
     persist_hidden_calendars(&HashSet::new());
 }
 
+fn active_auth_url() -> Option<String> {
+    let text = fs::read_to_string(auth_session_path()).ok()?;
+    let v: Value = serde_json::from_str(&text).ok()?;
+    let url = v.get("url")?.as_str()?.to_owned();
+    let exp = v.get("expires_at")?.as_f64()?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs_f64();
+    (exp > now + 10.0).then_some(url)
+}
+
+/// Launches `calendar_bar.py auth` if needed, waits for `auth-session.json`, and opens the URL.
+fn start_oauth_in_browser(status_out: Signal<Option<&'static str>>) {
+    let tx = ui_channel(move |msg: Option<&'static str>| {
+        if status_out.is_alive() {
+            status_out.set(msg);
+        }
+    });
+    status_out.set(Some("認証ページを準備中…"));
+    let _ = std::thread::Builder::new()
+        .name("calendar-bar-auth".into())
+        .spawn(move || {
+            let mut url = active_auth_url();
+            if url.is_none() {
+                let script = calendar_bar_script();
+                if !script.exists() {
+                    tx.send(Some("calendar_bar.py が見つかりません"));
+                    return;
+                }
+                let spawned = Command::new("python3")
+                    .arg(&script)
+                    .arg("auth")
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn();
+                match spawned {
+                    Ok(mut child) => {
+                        let script_for_sync = script.clone();
+                        std::thread::spawn(move || {
+                            if let Ok(st) = child.wait()
+                                && st.success()
+                            {
+                                let _ = Command::new("python3")
+                                    .arg(&script_for_sync)
+                                    .arg("sync")
+                                    .stdin(Stdio::null())
+                                    .stdout(Stdio::null())
+                                    .stderr(Stdio::null())
+                                    .status();
+                            }
+                        });
+                    }
+                    Err(_) => {
+                        tx.send(Some("認証の起動に失敗しました"));
+                        return;
+                    }
+                }
+                for _ in 0..50 {
+                    std::thread::sleep(Duration::from_millis(100));
+                    if let Some(found) = active_auth_url() {
+                        url = Some(found);
+                        break;
+                    }
+                }
+            }
+            if let Some(url) = url {
+                let opened = Command::new("xdg-open")
+                    .arg(&url)
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn();
+                if opened.is_ok() {
+                    tx.send(Some("ブラウザで開きました"));
+                } else {
+                    tx.send(Some("ブラウザを開けませんでした"));
+                }
+            } else {
+                tx.send(Some("認証URLを取得できませんでした"));
+            }
+        });
+}
+
 // --- Zero-dependency date / RFC3339 math ---
 
 fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
@@ -360,6 +451,10 @@ fn unix_to_local_parts(unix_utc: i64, tz_offset_secs: i64) -> (i32, u32, u32, u3
     let secs = local.rem_euclid(86_400) as u32;
     let (y, m, d) = civil_from_days(days);
     (y, m, d, secs / 3600, (secs % 3600) / 60)
+}
+
+fn add_days(date: (i32, u32, u32), delta: i64) -> (i32, u32, u32) {
+    civil_from_days(days_from_civil(date.0, date.1, date.2) + delta)
 }
 
 fn parse_u32(s: &str) -> Option<u32> {
@@ -561,8 +656,12 @@ struct AgendaItem {
     past: bool,
 }
 
-fn compute_day_events(state: &ScheduleState, now: NowContext, day_offset: i64) -> Vec<AgendaItem> {
-    let base_days = days_from_civil(now.today.0, now.today.1, now.today.2) + day_offset;
+fn compute_events_for_date(
+    state: &ScheduleState,
+    now: NowContext,
+    date: (i32, u32, u32),
+) -> Vec<AgendaItem> {
+    let base_days = days_from_civil(date.0, date.1, date.2);
     let day_start = base_days * 86_400 - now.tz_offset;
     let day_end = day_start + 86_400;
 
@@ -584,9 +683,13 @@ fn compute_day_events(state: &ScheduleState, now: NowContext, day_offset: i64) -
         }
     }
 
-    let next_index = matched
-        .iter()
-        .position(|(ev, from, _)| !ev.all_day && *from >= now.utc_secs);
+    let next_index = if date == now.today {
+        matched
+            .iter()
+            .position(|(ev, from, _)| !ev.all_day && *from >= now.utc_secs)
+    } else {
+        None
+    };
 
     matched
         .into_iter()
@@ -610,6 +713,50 @@ fn compute_day_events(state: &ScheduleState, now: NowContext, day_offset: i64) -
             }
         })
         .collect()
+}
+
+/// Up to 3 distinct dot colors for visible events on `(year, month, day)`.
+pub fn day_event_colors(year: i32, month: u32, day: u32) -> Vec<Color> {
+    let sig = state_signal();
+    let now = current_now();
+    let dark = is_dark();
+    let fallback = colors().primary;
+    sig.with(|s| {
+        if s.events.status == "auth_required" || !is_fresh(&s.events, now) {
+            return Vec::new();
+        }
+        let base_days = days_from_civil(year, month, day);
+        let day_start = base_days * 86_400 - now.tz_offset;
+        let day_end = day_start + 86_400;
+        let mut out: Vec<Color> = Vec::new();
+        for ev in &s.events.events {
+            if !s.genres.is_visible(&ev.calendar_id) {
+                continue;
+            }
+            let Some(from) = parse_timestamp(&ev.start_raw, now.tz_offset) else {
+                continue;
+            };
+            let to = ev
+                .end_raw
+                .as_deref()
+                .and_then(|raw| parse_timestamp(raw, now.tz_offset));
+            let eff_to = to.unwrap_or(from);
+            if from < day_end && (from >= day_start || eff_to > day_start) {
+                let col = if s.genres.enabled {
+                    s.genres.accent(&ev.calendar_id, dark)
+                } else {
+                    fallback
+                };
+                if !out.contains(&col) {
+                    out.push(col);
+                    if out.len() >= 3 {
+                        break;
+                    }
+                }
+            }
+        }
+        out
+    })
 }
 
 /// Inline next-event segment rendered inside the top bar's single clock island.
@@ -683,32 +830,50 @@ pub fn next_event_inline(open: Memo<bool>) -> Div {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum AgendaTab {
-    Today,
-    Tomorrow,
-    Calendars,
+enum StatusKind {
+    AuthRequired,
+    Stale,
 }
 
-/// Schedule card inside the calendar panel, styled to match `month_view()` and `gauges()`.
-pub fn agenda_section() -> Div {
+/// Schedule card inside the calendar panel, synced with the month grid's selected date.
+pub fn agenda_section(selected: Signal<Option<(i32, u32, u32)>>) -> Div {
     let sig = state_signal();
-    let tab = signal(AgendaTab::Today);
+    let filters_open = signal(false);
+    let auth_feedback = signal(None::<&'static str>);
 
-    let status_message = memo(move || {
+    // Selecting a date on the month grid automatically switches back from the filter list.
+    effect(move || {
+        if selected.get().is_some() && untrack(|| filters_open.get()) {
+            filters_open.set(false);
+        }
+    });
+
+    let status_kind = memo(move || {
         let now = current_now();
         sig.with(|s| {
             if s.events.status == "auth_required" {
-                Some("カレンダー連携待ち".to_owned())
+                Some(StatusKind::AuthRequired)
             } else if !is_fresh(&s.events, now) {
-                Some("予定を更新できません".to_owned())
+                Some(StatusKind::Stale)
             } else {
                 None
             }
         })
     });
 
-    let tab_btn = move |target: AgendaTab, label: &'static str| {
-        let active = memo(move || tab.get() == target);
+    let active_date = memo(move || {
+        let today = current_now().today;
+        selected.get().unwrap_or(today)
+    });
+
+    let is_today_tab = memo(move || {
+        !filters_open.get() && active_date.get() == current_now().today
+    });
+    let is_tomorrow_tab = memo(move || {
+        !filters_open.get() && active_date.get() == add_days(current_now().today, 1)
+    });
+
+    let tab_btn = move |active: Memo<bool>, label: &'static str, on_press: Rc<dyn Fn()>| {
         pressable(
             div()
                 .flex_1()
@@ -717,15 +882,7 @@ pub fn agenda_section() -> Div {
                 .flex()
                 .items_center()
                 .justify_center()
-                .on_click(move |_| {
-                    if target == AgendaTab::Calendars
-                        && untrack(|| tab.get()) == AgendaTab::Calendars
-                    {
-                        tab.set(AgendaTab::Today);
-                    } else {
-                        tab.set(target);
-                    }
-                })
+                .on_click(move |_| on_press())
                 .dyn_style(move |s| {
                     let c = colors();
                     if active.get() {
@@ -739,6 +896,8 @@ pub fn agenda_section() -> Div {
         )
     };
 
+    let cal_tab_active = memo(move || filters_open.get());
+
     div()
         .w_full()
         .p(12.0_f32)
@@ -747,23 +906,63 @@ pub fn agenda_section() -> Div {
         .flex_col()
         .gap(8.0_f32)
         .dyn_style(|s| s.bg(colors().surface_container_high))
-        .child(dyn_view(move || {
-            if let Some(msg) = status_message.get() {
-                return div()
-                    .px(6.0_f32)
-                    .py(4.0_f32)
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap(8.0_f32)
-                    .child(sym(icons::CALENDAR_TODAY, 16.0, |c| c.on_surface_variant))
-                    .child(
-                        static_txt(TextStyle::BODY_MEDIUM, msg)
+        .child(dyn_view(move || match status_kind.get() {
+            Some(StatusKind::AuthRequired) => div()
+                .flex()
+                .flex_col()
+                .gap(8.0_f32)
+                .child(
+                    div()
+                        .px(4.0_f32)
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap(8.0_f32)
+                        .child(sym(icons::CALENDAR_TODAY, 16.0, |c| c.on_surface_variant))
+                        .child(
+                            txt(TextStyle::BODY_MEDIUM, move || {
+                                auth_feedback
+                                    .get()
+                                    .unwrap_or("カレンダー連携待ち")
+                                    .to_owned()
+                            })
+                            .flex_1()
                             .dyn_style(|s| s.text_color(colors().on_surface_variant)),
-                    )
-                    .into_view();
-            }
-            div()
+                        )
+                        .child(pressable(
+                            div()
+                                .h(30.0)
+                                .px(12.0_f32)
+                                .rounded(15.0_f32)
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .gap(5.0_f32)
+                                .on_click(move |_| start_oauth_in_browser(auth_feedback))
+                                .dyn_style(|s| {
+                                    let c = colors();
+                                    s.bg(c.primary_container).text_color(c.on_primary_container)
+                                })
+                                .child(sym(icons::OPEN_IN_NEW, 14.0, |c| c.on_primary_container))
+                                .child(static_txt(TextStyle::LABEL_MEDIUM, "認証を開く")),
+                            |c| c.on_primary_container,
+                        )),
+                )
+                .into_view(),
+            Some(StatusKind::Stale) => div()
+                .px(6.0_f32)
+                .py(4.0_f32)
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(8.0_f32)
+                .child(sym(icons::CALENDAR_TODAY, 16.0, |c| c.on_surface_variant))
+                .child(
+                    static_txt(TextStyle::BODY_MEDIUM, "予定を更新できません")
+                        .dyn_style(|s| s.text_color(colors().on_surface_variant)),
+                )
+                .into_view(),
+            None => div()
                 .flex()
                 .flex_col()
                 .gap(8.0_f32)
@@ -772,23 +971,81 @@ pub fn agenda_section() -> Div {
                         .flex()
                         .flex_row()
                         .gap(6.0_f32)
-                        .child(tab_btn(AgendaTab::Today, "今日"))
-                        .child(tab_btn(AgendaTab::Tomorrow, "明日"))
-                        .child(tab_btn(AgendaTab::Calendars, "カレンダー")),
+                        .child(tab_btn(
+                            is_today_tab,
+                            "今日",
+                            Rc::new(move || {
+                                filters_open.set(false);
+                                selected.set(None);
+                            }),
+                        ))
+                        .child(tab_btn(
+                            is_tomorrow_tab,
+                            "明日",
+                            Rc::new(move || {
+                                filters_open.set(false);
+                                selected.set(Some(add_days(current_now().today, 1)));
+                            }),
+                        ))
+                        .child(tab_btn(
+                            cal_tab_active,
+                            "カレンダー",
+                            Rc::new(move || {
+                                filters_open.update(|v| *v = !*v);
+                            }),
+                        )),
                 )
-                .child(dyn_view(move || match tab.get() {
-                    AgendaTab::Today => day_events_list(sig, 0).into_view(),
-                    AgendaTab::Tomorrow => day_events_list(sig, 1).into_view(),
-                    AgendaTab::Calendars => calendar_filters_list(sig).into_view(),
+                .child(show(
+                    move || {
+                        !filters_open.get()
+                            && active_date.get() != current_now().today
+                            && active_date.get() != add_days(current_now().today, 1)
+                    },
+                    move || {
+                        div()
+                            .px(4.0_f32)
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                txt(TextStyle::LABEL_MEDIUM, move || {
+                                    let (y, m, d) = active_date.get();
+                                    let wd = jp_weekday(y, m, d);
+                                    format!("{m}月{d}日({wd}) の予定")
+                                })
+                                .dyn_style(|s| s.text_color(colors().primary)),
+                            )
+                            .child(pressable(
+                                div()
+                                    .px(8.0_f32)
+                                    .py(2.0_f32)
+                                    .rounded(8.0_f32)
+                                    .on_click(move |_| selected.set(None))
+                                    .dyn_style(|s| s.text_color(colors().on_surface_variant))
+                                    .child(static_txt(TextStyle::LABEL_SMALL, "今日に戻る")),
+                                |c| c.on_surface,
+                            ))
+                    },
+                ))
+                .child(dyn_view(move || {
+                    if filters_open.get() {
+                        calendar_filters_list(sig).into_view()
+                    } else {
+                        day_events_list(sig, active_date).into_view()
+                    }
                 }))
-                .into_view()
+                .into_view(),
         }))
 }
 
-fn day_events_list(sig: Signal<ScheduleState>, day_offset: i64) -> Div {
+use std::rc::Rc;
+
+fn day_events_list(sig: Signal<ScheduleState>, active_date: Memo<(i32, u32, u32)>) -> Div {
     let items = memo(move || {
         let now = current_now();
-        sig.with(|s| compute_day_events(s, now, day_offset))
+        let date = active_date.get();
+        sig.with(|s| compute_events_for_date(s, now, date))
     });
     div()
         .flex()
@@ -1040,7 +1297,8 @@ mod tests {
               "events": [
                 {"title": "All Day", "start": "2026-11-26", "all_day": true, "calendar_id": "a", "calendar_name": "A"},
                 {"title": "Hidden", "start": "2026-11-26T14:30:00+09:00", "all_day": false, "calendar_id": "h", "calendar_name": "H"},
-                {"title": "Lecture", "start": "2026-11-26T15:00:00+09:00", "end": "2026-11-26T16:30:00+09:00", "all_day": false, "calendar_id": "s", "calendar_name": "School"}
+                {"title": "Lecture", "start": "2026-11-26T15:00:00+09:00", "end": "2026-11-26T16:30:00+09:00", "all_day": false, "calendar_id": "s", "calendar_name": "School"},
+                {"title": "Future", "start": "2026-11-29T10:00:00+09:00", "all_day": false, "calendar_id": "s", "calendar_name": "School"}
               ]
             }"#,
         );
@@ -1052,10 +1310,14 @@ mod tests {
         assert_eq!(next.text, "15:00 Lecture");
         assert_eq!(next.calendar_id.as_deref(), Some("s"));
 
-        let today_items = compute_day_events(&state, now, 0);
+        let today_items = compute_events_for_date(&state, now, (2026, 11, 26));
         assert_eq!(today_items.len(), 2);
         assert!(!today_items[0].upcoming);
         assert!(today_items[1].upcoming);
+
+        let future_items = compute_events_for_date(&state, now, (2026, 11, 29));
+        assert_eq!(future_items.len(), 1);
+        assert_eq!(future_items[0].title, "Future");
     }
 
     #[test]
