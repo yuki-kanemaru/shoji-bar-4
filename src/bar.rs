@@ -369,11 +369,12 @@ pub fn workspaces_island(list: Memo<Vec<Ws>>, activate: Rc<dyn Fn(&str)>, at: Ba
 
 /// The window with the keyboard on this output.
 fn window_island(output: Output, at: BarPlacement) -> Show {
-    focused_island(
+    let out_for_active = output.clone();
+    focused_island_with(
         memo(move || {
             toplevels()
                 .active()
-                .filter(|t| t.outputs.is_empty() || t.outputs.contains(&output.name))
+                .filter(|t| t.outputs.is_empty() || t.outputs.contains(&out_for_active.name))
                 .map(|t| Focused {
                     id: t.id(),
                     title: t.title.chars().take(60).collect(),
@@ -381,6 +382,7 @@ fn window_island(output: Output, at: BarPlacement) -> Show {
                 })
         }),
         at,
+        Some(output),
     )
 }
 
@@ -400,15 +402,54 @@ pub struct Focused {
 /// up, filling what the island has yet to give up, and a title wider than the island fades out at
 /// its edge rather than being cut off.
 pub fn focused_island(active: Memo<Option<Focused>>, at: BarPlacement) -> Show {
+    focused_island_with(active, at, None)
+}
+
+fn focused_island_with(
+    active: Memo<Option<Focused>>,
+    at: BarPlacement,
+    output: Option<Output>,
+) -> Show {
     if at.is_vertical() {
         let app_id = memo(move || active.with(|t| t.as_ref().map(|t| t.app_id.clone())));
         return show(
             move || active.with(Option::is_some),
             move || {
-                bar_island(at)
+                let here = node_ref();
+                let open = memo({
+                    let output = output.clone();
+                    move || output.as_ref().is_some_and(|o| is_open(o, Panel::AppUsage))
+                });
+                let mut node = bar_island(at)
+                    .node_ref(here)
                     .size(VERTICAL_ISLAND)
                     .justify_center()
-                    .child(window_icon(app_id))
+                    .dyn_style(move |s| {
+                        let c = colors();
+                        if open.get() {
+                            s.bg(c.primary_container).text_color(c.on_primary_container)
+                        } else {
+                            s
+                        }
+                    })
+                    .child(window_icon(app_id));
+                if let Some(output) = output.clone() {
+                    node = node.on_click(move |_| {
+                        if let Some(r) = here.logical_rect() {
+                            crate::panels::toggle_at(
+                                &output,
+                                Panel::AppUsage,
+                                AnchorPoint {
+                                    x: r.x + r.width / 2.0,
+                                    y: r.y + r.height / 2.0,
+                                },
+                            );
+                        } else {
+                            toggle(&output, Panel::AppUsage);
+                        }
+                    });
+                }
+                pressable(node, |c| c.on_surface)
             },
         )
         .enter(|s| s.opacity(0.0_f32).scale(0.8_f32))
@@ -441,12 +482,43 @@ pub fn focused_island(active: Memo<Option<Focused>>, at: BarPlacement) -> Show {
             });
             let width = animated(0.0f32);
             let sized = Rc::new(Cell::new(false));
+            let here = node_ref();
+            let open = memo({
+                let output = output.clone();
+                move || output.as_ref().is_some_and(|o| is_open(o, Panel::AppUsage))
+            });
+            let click_output = output.clone();
             bar_island(at)
+                .node_ref(here)
                 .relative()
                 .px(5.0_f32)
                 .min_w(0.0)
                 .flex_shrink(1.0_f32)
                 .overflow_hidden()
+                .on_click(move |_| {
+                    if let Some(output) = &click_output {
+                        if let Some(r) = here.logical_rect() {
+                            crate::panels::toggle_at(
+                                output,
+                                Panel::AppUsage,
+                                AnchorPoint {
+                                    x: r.x + r.width / 2.0,
+                                    y: r.y + r.height / 2.0,
+                                },
+                            );
+                        } else {
+                            toggle(output, Panel::AppUsage);
+                        }
+                    }
+                })
+                .dyn_style(move |s| {
+                    let c = colors();
+                    if open.get() {
+                        s.bg(c.primary_container).text_color(c.on_primary_container)
+                    } else {
+                        s
+                    }
+                })
                 .child(
                     div()
                         .relative()

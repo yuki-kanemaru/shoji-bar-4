@@ -1,5 +1,6 @@
 //! shoji-bar-4: a Material 3 Expressive desktop shell for ShojiWM.
 
+mod app_usage;
 mod appinfo;
 mod bar;
 mod battery_card;

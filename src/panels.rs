@@ -15,16 +15,18 @@ pub enum Panel {
     Launcher,
     Clipboard,
     Media,
+    AppUsage,
     Power,
 }
 
 impl Panel {
-    pub(crate) const ALL: [Panel; 6] = [
+    pub(crate) const ALL: [Panel; 7] = [
         Self::QuickSettings,
         Self::Calendar,
         Self::Launcher,
         Self::Clipboard,
         Self::Media,
+        Self::AppUsage,
         Self::Power,
     ];
 
@@ -35,6 +37,7 @@ impl Panel {
             Self::Launcher => "launcher",
             Self::Clipboard => "clipboard",
             Self::Media => "media",
+            Self::AppUsage => "app-usage",
             Self::Power => "power",
         }
     }
@@ -158,7 +161,7 @@ fn place_panel(root: Style, panel: Panel, at: BarPlacement) -> Style {
             PanelSide::Right => root.items_end().justify_center().pr(clearance),
         },
         // Next to the bar's island of it, which supplies the other coordinate.
-        Panel::Media => match at.side() {
+        Panel::Media | Panel::AppUsage => match at.side() {
             PanelSide::Below => root.items_start().justify_start().pt(clearance),
             PanelSide::Left => root.items_start().justify_start().pl(clearance),
             PanelSide::Right => root.items_end().justify_start().pr(clearance),
@@ -206,6 +209,10 @@ pub(crate) fn surface_at(
             let anchor = untrack(|| invocation.get()).and_then(|i| i.anchor);
             crate::media_panel::panel(output.clone(), anchor, untrack(|| placement.get()))
         }
+        Panel::AppUsage => {
+            let anchor = untrack(|| invocation.get()).and_then(|i| i.anchor);
+            crate::app_usage::panel(output.clone(), anchor, untrack(|| placement.get()))
+        }
         Panel::Power => crate::power_dialog::panel(),
     };
     // Keys go to what has the focus, and with nothing focused not to here but to what holds it: the
@@ -242,7 +249,7 @@ pub(crate) fn surface_at(
         }));
     // Where it is follows the bar, without what is in it being built again.
     let mut root = root.dyn_style(move |s| place_panel(s, panel, placement.get()));
-    if panel == Panel::Media {
+    if matches!(panel, Panel::Media | Panel::AppUsage) {
         // It is put by the island it was opened from, which has just gone with the bar.
         let first = Cell::new(true);
         effect(move || {
