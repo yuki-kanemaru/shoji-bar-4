@@ -200,7 +200,16 @@ fn action_button(what: Ask, hovered: Signal<bool>) -> Div {
 /// Quits the compositor this shell runs in, which ends the session; the socket comes from the
 /// environment ShojiWM started the shell with.
 fn log_out() {
-    match std::process::Command::new("shoji_wm").arg("--quit").spawn() {
+    let mut cmd = if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some() {
+        let mut c = std::process::Command::new("hyprctl");
+        c.args(["dispatch", "exit"]);
+        c
+    } else {
+        let mut c = std::process::Command::new("shoji_wm");
+        c.arg("--quit");
+        c
+    };
+    match cmd.spawn() {
         // Waited for, so that it is not left behind if the compositor stays.
         Ok(mut child) => drop(std::thread::spawn(move || child.wait())),
         Err(e) => eprintln!("shoji-bar-4: couldn't log out: {e}"),
