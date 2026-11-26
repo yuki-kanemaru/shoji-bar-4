@@ -128,6 +128,25 @@ pub fn focused_output() -> Option<String> {
 fn run(line: &str) -> Result<String, String> {
     let words: Vec<&str> = line.split_whitespace().collect();
     match words.as_slice() {
+        ["toggle" | "open", name @ ("sound" | "wifi" | "bluetooth" | "settings"), rest @ ..] => {
+            let page = match *name {
+                "sound" => crate::quick_settings::Page::Sound,
+                "wifi" => crate::quick_settings::Page::Wifi,
+                "bluetooth" => crate::quick_settings::Page::Bluetooth,
+                _ => crate::quick_settings::Page::Settings,
+            };
+            let output = rest
+                .first()
+                .map(|s| s.to_string())
+                .or_else(focused_output)
+                .ok_or("no output")?;
+            if words[0] == "toggle" {
+                crate::quick_settings::toggle_page(&output, page);
+            } else {
+                crate::quick_settings::open_page(&output, page);
+            }
+            Ok(String::new())
+        }
         ["toggle" | "open", name, rest @ ..] => {
             let panel = Panel::from_name(name).ok_or_else(|| format!("no panel called {name}"))?;
             let output = rest

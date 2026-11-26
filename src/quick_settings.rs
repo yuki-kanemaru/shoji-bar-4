@@ -37,9 +37,32 @@ thread_local! {
 
 /// Opens the panel at a page, on the output where the window with the keyboard is.
 pub fn open_at(page: Page) {
-    START.with(|s| s.set(page));
     if let Some(output) = crate::ipc::focused_output() {
-        crate::panels::open(&output, crate::panels::Panel::QuickSettings);
+        open_page(&output, page);
+    }
+}
+
+/// Opens quick settings at `page` on `output` (or switches to `page` if already open there).
+pub fn open_page(output: &str, page: Page) {
+    let open_here = crate::panels::current()
+        .is_some_and(|(o, p)| o == output && p == crate::panels::Panel::QuickSettings);
+    if open_here {
+        go(page);
+    } else {
+        START.with(|s| s.set(page));
+        crate::panels::open(output, crate::panels::Panel::QuickSettings);
+    }
+}
+
+/// Toggles quick settings at `page` on `output`: closes if already showing `page`, else opens it.
+pub fn toggle_page(output: &str, page: Page) {
+    let open_here = crate::panels::current()
+        .is_some_and(|(o, p)| o == output && p == crate::panels::Panel::QuickSettings);
+    let on_page = page_signal().is_some_and(|p| p.get_untracked() == page);
+    if open_here && on_page {
+        crate::panels::close();
+    } else {
+        open_page(output, page);
     }
 }
 
