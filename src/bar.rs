@@ -82,7 +82,17 @@ pub fn view(output: Output, at: BarPlacement) -> Div {
                 ))
                 .child(window_island(output.clone(), at)),
         )
-        .child(clock_island(output.clone(), at))
+        .child(if vertical {
+            clock_island(output.clone(), at)
+        } else {
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(8.0_f32)
+                .child(clock_island(output.clone(), at))
+                .child(crate::schedule::next_event_island(output.clone(), at))
+        })
         .child(
             trailing
                 .child(media_island(output.clone(), at))

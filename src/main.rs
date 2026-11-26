@@ -20,6 +20,7 @@ mod preview;
 mod qs_pages;
 mod qs_settings;
 mod quick_settings;
+mod schedule;
 mod settings;
 mod shell_layer;
 mod theme;
@@ -52,6 +53,7 @@ fn main() {
         .run(|| {
             ipc::serve();
             theme::install();
+            schedule::install();
             wm::share_theme();
             shell_layer::open_popups(shell_layer::Wayland);
             osd::install();

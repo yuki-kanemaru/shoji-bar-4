@@ -29,6 +29,7 @@ pub fn panel() -> Div {
         })
         .child(settle_in(0, header()))
         .child(settle_in(1, month_view()))
+        .child(settle_in(2, crate::schedule::agenda_section()))
         // After the days, which come in over about a quarter of a second.
         .child(settle_in(6, gauges()))
 }
