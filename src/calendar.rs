@@ -79,7 +79,7 @@ fn header() -> Div {
         )
         .child(
             txt(TextStyle::TITLE_MEDIUM, || {
-                local_time(Every::Minute).format("%A, %-d %B %Y")
+                jp_date_full(local_time(Every::Minute))
             })
             .dyn_style(|s| s.text_color(colors().on_surface_variant)),
         )
@@ -92,11 +92,7 @@ const CELL_H: f32 = 36.0;
 const TODAY: f32 = 36.0;
 const GRID_W: f32 = CELL_W * 7.0;
 
-const MONTHS: [&str; 12] = [
-    "January", "February", "March", "April", "May", "June", "July", "August", "September",
-    "October", "November", "December",
-];
-const WEEKDAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const WEEKDAYS: [&str; 7] = ["月", "火", "水", "木", "金", "土", "日"];
 
 /// A month as one number, to count in.
 fn month_index(year: i32, month: u32) -> i32 {
@@ -206,7 +202,7 @@ fn month_view() -> Div {
                                 .items_center()
                                 .justify_center()
                                 .dyn_style(|s| s.text_color(colors().primary))
-                                .child(format!("{} {year}", MONTHS[month as usize - 1])),
+                                .child(format!("{year}年 {month}月")),
                         )
                     },
                 )
@@ -484,7 +480,7 @@ fn gauges() -> Div {
         ))
         .child(gauge(
             icons::MEMORY,
-            "Memory",
+            "メモリ",
             Box::new(move || {
                 let (used, total) = memory.get();
                 (used as f64 / total.max(1) as f64) as f32
@@ -493,7 +489,7 @@ fn gauges() -> Div {
         ))
         .child(gauge(
             icons::THERMOSTAT,
-            "Heat",
+            "温度",
             Box::new(move || ((heat.get().unwrap_or(0.0) - 30.0) / 70.0).clamp(0.0, 1.0) as f32),
             Box::new(move || {
                 heat.get()

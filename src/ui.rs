@@ -327,3 +327,41 @@ pub fn launcher_glyph(
             })),
     )
 }
+
+
+/// Japanese weekday from `Date::weekday()` (0 = Sunday .. 6 = Saturday).
+pub fn jp_weekday(year: i32, month: u32, day: u32) -> &'static str {
+    const DAYS: [&str; 7] = ["日", "月", "火", "水", "木", "金", "土"];
+    let idx = anti_webui_md3e::components::Date::new(year, month, day).weekday() as usize;
+    DAYS[idx % 7]
+}
+
+/// `11月26日(木)`
+pub fn jp_date_short(t: anti_webui::shell::LocalTime) -> String {
+    let wd = jp_weekday(t.year, t.month as u32, t.day as u32);
+    format!("{}月{}日({wd})", t.month, t.day)
+}
+
+/// `11月26日 (木)`
+pub fn jp_date_medium(t: anti_webui::shell::LocalTime) -> String {
+    let wd = jp_weekday(t.year, t.month as u32, t.day as u32);
+    format!("{}月{}日 ({wd})", t.month, t.day)
+}
+
+/// `2026年11月26日 (木)`
+pub fn jp_date_full(t: anti_webui::shell::LocalTime) -> String {
+    let wd = jp_weekday(t.year, t.month as u32, t.day as u32);
+    format!("{}年{}月{}日 ({wd})", t.year, t.month, t.day)
+}
+
+#[cfg(test)]
+mod jp_date_tests {
+    use super::jp_weekday;
+
+    #[test]
+    fn thursday_nov_26_2026_is_moku() {
+        assert_eq!(jp_weekday(2026, 11, 26), "木");
+        assert_eq!(jp_weekday(2026, 11, 29), "日");
+        assert_eq!(jp_weekday(2026, 11, 30), "月");
+    }
+}

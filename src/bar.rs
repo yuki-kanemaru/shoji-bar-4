@@ -795,7 +795,7 @@ fn clock_island(output: Output, at: BarPlacement) -> Div {
         content
             .child(
                 txt(TextStyle::LABEL_SMALL, || {
-                    local_time(Every::Minute).format("%a %-d %b")
+                    jp_date_short(local_time(Every::Minute))
                 })
                 .dyn_style(move |s| {
                     let c = colors();

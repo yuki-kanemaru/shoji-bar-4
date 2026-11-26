@@ -75,7 +75,7 @@ pub fn panel(output: Output) -> Div {
                     TextStyle::BODY_MEDIUM
                         .apply(text_input())
                         .value(query)
-                        .placeholder("Search apps")
+                        .placeholder("アプリを検索")
                         .select_text()
                         .node_ref(input)
                         .flex_1()
@@ -143,7 +143,7 @@ pub fn panel(output: Output) -> Div {
                             .child(sym(icons::SEARCH, 48.0, |c| c.outline))
                             .child(
                                 txt(TextStyle::TITLE_MEDIUM, move || {
-                                    format!("Nothing called “{}”", query.get())
+                                    format!("「{}」は見つかりません", query.get())
                                 })
                                 .dyn_style(|s| s.text_color(colors().on_surface_variant)),
                             )

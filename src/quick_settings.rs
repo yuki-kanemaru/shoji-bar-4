@@ -189,10 +189,10 @@ pub fn section() -> Div {
 
 fn greeting() -> &'static str {
     match local_time(Every::Minute).hour {
-        5..=10 => "Good morning",
-        11..=16 => "Good afternoon",
-        17..=21 => "Good evening",
-        _ => "Good night",
+        5..=10 => "おはようございます",
+        11..=16 => "こんにちは",
+        17..=21 => "こんばんは",
+        _ => "おやすみなさい",
     }
 }
 
@@ -236,11 +236,11 @@ fn header() -> Div {
                         .child(
                             txt(TextStyle::BODY_SMALL, move || {
                                 let t = local_time(Every::Minute);
-                                let mut s = t.format("%A, %-d %B");
+                                let mut s = jp_date_medium(t);
                                 if b.available() {
                                     s.push_str(&format!(" · {:.0}%", b.percentage()));
                                     if b.state() == BatteryState::Charging {
-                                        s.push_str(" charging");
+                                        s.push_str(" 充電中");
                                     }
                                 }
                                 s
@@ -265,13 +265,13 @@ fn header() -> Div {
                         move || {
                             let s = session();
                             let actions: [(&'static Symbol, &str, Power); 5] = [
-                                (icons::LOCK, "Lock", Power::Lock),
-                                (icons::BEDTIME, "Sleep", Power::Sleep),
-                                (icons::LOGOUT, "Log out", Power::Ask(Ask::LogOut)),
-                                (icons::RESTART_ALT, "Restart", Power::Ask(Ask::Restart)),
+                                (icons::LOCK, "ロック", Power::Lock),
+                                (icons::BEDTIME, "スリープ", Power::Sleep),
+                                (icons::LOGOUT, "ログアウト", Power::Ask(Ask::LogOut)),
+                                (icons::RESTART_ALT, "再起動", Power::Ask(Ask::Restart)),
                                 (
                                     icons::POWER_SETTINGS_NEW,
-                                    "Shut down",
+                                    "シャットダウン",
                                     Power::Ask(Ask::PowerOff),
                                 ),
                             ];
@@ -510,9 +510,9 @@ fn tiles() -> Div {
         move || server.as_ref().is_some_and(|s| s.do_not_disturb())
     });
     let profile_label = |name: &str| match name {
-        "power-saver" => "Power saver".to_owned(),
-        "performance" => "Performance".to_owned(),
-        "balanced" => "Balanced".to_owned(),
+        "power-saver" => "省電力".to_owned(),
+        "performance" => "パフォーマンス".to_owned(),
+        "balanced" => "バランス".to_owned(),
         other => other.to_owned(),
     };
     let row = || div().flex().flex_row().gap(8.0_f32);
@@ -529,12 +529,12 @@ fn tiles() -> Div {
                         None if net.wired().is_some_and(|w| w.connected) => icons::LAN,
                         None => icons::WIFI_OFF,
                     },
-                    "Internet",
+                    "インターネット",
                     move || match net.wifi() {
                         Some(ap) => ap.ssid,
-                        None if net.wired().is_some_and(|w| w.connected) => "Ethernet".into(),
-                        None if net.wifi_enabled() => "Not connected".into(),
-                        None => "Wi-Fi off".into(),
+                        None if net.wired().is_some_and(|w| w.connected) => "有線LAN".into(),
+                        None if net.wifi_enabled() => "未接続".into(),
+                        None => "Wi-Fi オフ".into(),
                     },
                     move || net.wifi_enabled(),
                     move || net.available(),
@@ -560,10 +560,10 @@ fn tiles() -> Div {
                             .map(|d| d.name)
                             .collect();
                         match connected.len() {
-                            0 if bt.adapter().is_some_and(|a| a.powered) => "On".into(),
-                            0 => "Off".into(),
+                            0 if bt.adapter().is_some_and(|a| a.powered) => "オン".into(),
+                            0 => "オフ".into(),
                             1 => connected[0].clone(),
-                            n => format!("{n} devices"),
+                            n => format!("{n}台接続中"),
                         }
                     },
                     move || bt.adapter().is_some_and(|a| a.powered),
@@ -585,11 +585,11 @@ fn tiles() -> Div {
                             icons::LIGHT_MODE
                         }
                     },
-                    "Dark theme",
+                    "ダークモード",
                     move || match settings().with(|s| s.mode) {
-                        ThemeMode::Auto => "By time of day".into(),
-                        _ if dark() => "On".into(),
-                        _ => "Off".into(),
+                        ThemeMode::Auto => "時間帯で自動".into(),
+                        _ if dark() => "オン".into(),
+                        _ => "オフ".into(),
                     },
                     dark,
                     || true,
@@ -612,8 +612,8 @@ fn tiles() -> Div {
                             icons::NOTIFICATIONS
                         }
                     },
-                    "Do not disturb",
-                    move || if dnd.get() { "On".into() } else { "Off".into() },
+                    "おやすみモード",
+                    move || if dnd.get() { "オン".into() } else { "オフ".into() },
                     move || dnd.get(),
                     move || has_server,
                     move || {
@@ -632,7 +632,7 @@ fn tiles() -> Div {
                         "performance" => icons::SPEED,
                         _ => icons::BOLT,
                     },
-                    "Power mode",
+                    "電源モード",
                     move || profile_label(&p.active()),
                     move || p.active() != "balanced",
                     move || p.available(),
@@ -653,11 +653,11 @@ fn tiles() -> Div {
                             icons::MIC
                         }
                     },
-                    "Microphone",
+                    "マイク",
                     move || match a.default_source() {
-                        Some(s) if s.muted => "Muted".into(),
+                        Some(s) if s.muted => "ミュート".into(),
                         Some(s) => s.description,
-                        None => "None".into(),
+                        None => "なし".into(),
                     },
                     move || a.default_source().is_some_and(|s| !s.muted),
                     move || a.default_source().is_some(),

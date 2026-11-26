@@ -363,7 +363,7 @@ pub fn panel(output: Output) -> Div {
             TextStyle::BODY_MEDIUM
                 .apply(text_input())
                 .value(query)
-                .placeholder("Search the clipboard")
+                .placeholder("クリップボードを検索")
                 .select_text()
                 .node_ref(input)
                 .flex_1()
@@ -480,9 +480,9 @@ pub fn panel(output: Output) -> Div {
 /// What the list says when it has nothing to show.
 fn nothing(query: Signal<String>, failed: Signal<bool>) -> Div {
     let (symbol, said): (&'static Symbol, String) = if failed.get_untracked() {
-        (icons::CONTENT_PASTE_OFF, "cliphist isn't there".into())
+        (icons::CONTENT_PASTE_OFF, "cliphist が見つかりません".into())
     } else if query.with_untracked(|q| q.trim().is_empty()) {
-        (icons::CONTENT_PASTE, "Nothing copied yet".into())
+        (icons::CONTENT_PASTE, "履歴はまだありません".into())
     } else {
         (icons::SEARCH_OFF, String::new())
     };
@@ -499,7 +499,7 @@ fn nothing(query: Signal<String>, failed: Signal<bool>) -> Div {
         .child(
             txt(TextStyle::TITLE_MEDIUM, move || {
                 if said.is_empty() {
-                    format!("Nothing like “{}”", query.get().trim())
+                    format!("「{}」に一致する履歴はありません", query.get().trim())
                 } else {
                     said.clone()
                 }
@@ -542,20 +542,20 @@ fn footer(results: Memo<Vec<Entry>>, entries: Signal<Vec<Entry>>, query: Signal<
         .items_center()
         .gap(14.0_f32)
         .px(6.0_f32)
-        .child(key("↑↓", "Move"))
-        .child(key("Enter", "Copy"))
-        .child(key("Del", "Forget"))
-        .child(key("Esc", "Close"))
+        .child(key("↑↓", "移動"))
+        .child(key("Enter", "コピー"))
+        .child(key("Del", "削除"))
+        .child(key("Esc", "閉じる"))
         .child(div().flex_1())
         .child(
             txt(TextStyle::LABEL_MEDIUM, move || {
                 let all = entries.with(Vec::len);
                 if query.with(|q| q.trim().is_empty()) {
-                    format!("{all} kept")
+                    format!("{all}件保存")
                 } else {
                     let found = results.with(Vec::len);
                     let more = if found == SHOWN { "+" } else { "" };
-                    format!("{found}{more} of {all}")
+                    format!("{found}{more} / {all}件")
                 }
             })
             .dyn_style(|s| s.text_color(colors().outline)),
@@ -601,7 +601,7 @@ fn row(
     };
     let (title, detail) = match &entry.picture {
         Some(p) => (
-            static_txt(TextStyle::BODY_MEDIUM, "Image"),
+            static_txt(TextStyle::BODY_MEDIUM, "画像"),
             Some(p.describe()),
         ),
         None => (

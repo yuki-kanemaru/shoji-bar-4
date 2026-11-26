@@ -19,7 +19,7 @@ pub fn settings_page() -> Div {
         .flex()
         .flex_col()
         .gap(12.0_f32)
-        .child(header("Settings", div()))
+        .child(header("設定", div()))
         .child(settle_in(1, account_section()))
         .child(settle_in(2, style_section()))
         .child(settle_in(3, bar_section()))
@@ -42,11 +42,11 @@ fn account_section() -> Div {
     let chosen = memo(|| settings().with(|s| s.avatar.is_some()));
     let said = move || {
         if chosen.get() {
-            "Your picture"
+            "プロフィール画像"
         } else if crate::user::picture().is_some() {
-            "The desktop's picture"
+            "デスクトップの画像"
         } else {
-            "No picture yet"
+            "画像未設定"
         }
         .to_owned()
     };
@@ -81,7 +81,7 @@ fn account_section() -> Div {
                             .gap(6.0_f32)
                             .child(
                                 styled_button(
-                                    "Change picture",
+                                    "画像を変更",
                                     ButtonStyle::tonal()
                                         .size(ButtonSize::ExtraSmall)
                                         .icon(icons::ADD_PHOTO_ALTERNATE),
@@ -98,7 +98,7 @@ fn account_section() -> Div {
                                     move || chosen.get(),
                                     || {
                                         styled_button(
-                                            "Remove",
+                                            "削除",
                                             ButtonStyle::text().size(ButtonSize::ExtraSmall),
                                         )
                                         .on_click(|_| crate::user::forget_picture())
@@ -117,7 +117,7 @@ fn account_section() -> Div {
 fn bar_section() -> Div {
     let positions = BarPosition::ALL;
     section()
-        .child(heading(icons::DESKTOP_WINDOWS, "Bar position"))
+        .child(heading(icons::DESKTOP_WINDOWS, "バーの位置"))
         .child(connected_button_group(
             positions.map(|p| p.label()),
             ButtonStyle::tonal(),
@@ -138,16 +138,16 @@ fn clock_section() -> Div {
             .child(switch(on))
     };
     section()
-        .child(heading(icons::SCHEDULE, "Clock"))
+        .child(heading(icons::SCHEDULE, "時計"))
         .child(row(
-            "24-hour time",
+            "24時間表示",
             Binding::new(
                 || settings().with(|s| s.clock_24h),
                 |on| settings().update(|s| s.clock_24h = on),
             ),
         ))
         .child(row(
-            "Show seconds",
+            "秒を表示",
             Binding::new(
                 || settings().with(|s| s.clock_seconds),
                 |on| settings().update(|s| s.clock_seconds = on),
@@ -161,7 +161,7 @@ fn style_section() -> Div {
     for (seed, name) in SEEDS {
         swatches = swatches.child(swatch(Some(seed), name));
     }
-    let from_wallpaper = show(|| wallpaper_seed().is_some(), || swatch(None, "Wallpaper"));
+    let from_wallpaper = show(|| wallpaper_seed().is_some(), || swatch(None, "壁紙"));
     let chip = |p: Palette| {
         filter_chip(
             p.label(),
@@ -186,7 +186,7 @@ fn style_section() -> Div {
     }
     let modes = [ThemeMode::Light, ThemeMode::Auto, ThemeMode::Dark];
     section()
-        .child(heading(icons::PALETTE, "Style & color"))
+        .child(heading(icons::PALETTE, "スタイルと配色"))
         .child(wallpapers())
         .child(swatches.child(from_wallpaper))
         .child(
@@ -198,7 +198,7 @@ fn style_section() -> Div {
                 .child(chips_b),
         )
         .child(connected_button_group(
-            ["Light", "Auto", "Dark"],
+            ["ライト", "自動", "ダーク"],
             ButtonStyle::tonal(),
             move |i| settings().with(|s| s.mode == modes[i]),
             move |i| settings().update(|s| s.mode = modes[i]),

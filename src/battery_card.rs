@@ -19,12 +19,12 @@ const LOW: f64 = 20.0;
 /// What it is doing, in a word and an icon.
 fn state_of(b: Battery) -> (&'static Symbol, &'static str) {
     match b.state() {
-        BatteryState::Charging => (icons::BOLT, "Charging"),
-        BatteryState::Full => (icons::CHECK_CIRCLE, "Full"),
+        BatteryState::Charging => (icons::BOLT, "充電中"),
+        BatteryState::Full => (icons::CHECK_CIRCLE, "満充電"),
         // Plugged in, kept from charging, like at a charge limit.
-        BatteryState::PendingCharge => (icons::POWER, "Not charging"),
-        _ if !b.on_battery() => (icons::POWER, "Plugged in"),
-        _ => (icons::BATTERY_FULL, "On battery"),
+        BatteryState::PendingCharge => (icons::POWER, "充電停止中"),
+        _ if !b.on_battery() => (icons::POWER, "電源接続中"),
+        _ => (icons::BATTERY_FULL, "バッテリー駆動"),
     }
 }
 
@@ -32,10 +32,10 @@ fn state_of(b: Battery) -> (&'static Symbol, &'static str) {
 fn span(d: Duration) -> String {
     let minutes = (d.as_secs() + 30) / 60;
     match (minutes / 60, minutes % 60) {
-        (0, 0) => "less than a minute".into(),
-        (0, m) => format!("{m} min"),
-        (h, 0) => format!("{h} h"),
-        (h, m) => format!("{h} h {m} min"),
+        (0, 0) => "1分未満".into(),
+        (0, m) => format!("{m}分"),
+        (h, 0) => format!("{h}時間"),
+        (h, m) => format!("{h}時間{m}分"),
     }
 }
 
@@ -58,21 +58,23 @@ fn at(d: Duration) -> Option<String> {
 
 /// What is ahead: how long until empty or full, and about when.
 fn estimate(b: Battery) -> String {
-    let with_time = |d: Duration, what: &str, when: &str| match at(d) {
-        Some(t) => format!("{} {what} · {when} {t}", span(d)),
-        None => format!("{} {what}", span(d)),
-    };
     match b.state() {
-        BatteryState::Full => "Fully charged".into(),
-        BatteryState::PendingCharge => format!("Plugged in, held at {:.0}%", b.percentage()),
+        BatteryState::Full => "充電完了".into(),
+        BatteryState::PendingCharge => format!("電源接続中（{:.0}%で保持）", b.percentage()),
         BatteryState::Charging => match b.time_to_full() {
-            Some(d) => with_time(d, "until full", "full at"),
-            None => "Working out how long until full".into(),
+            Some(d) => match at(d) {
+                Some(t) => format!("満充電まであと{} · {t}頃に完了", span(d)),
+                None => format!("満充電まであと{}", span(d)),
+            },
+            None => "満充電までの時間を計算中".into(),
         },
-        _ if !b.on_battery() => "Plugged in".into(),
+        _ if !b.on_battery() => "電源接続中".into(),
         _ => match b.time_to_empty() {
-            Some(d) => with_time(d, "left", "until about"),
-            None => "Working out how long it lasts".into(),
+            Some(d) => match at(d) {
+                Some(t) => format!("残り{} · {t}頃まで", span(d)),
+                None => format!("残り{}", span(d)),
+            },
+            None => "残り時間を計算中".into(),
         },
     }
 }
@@ -273,7 +275,7 @@ fn stats(b: Battery) -> Div {
         .gap(8.0_f32)
         .child(tile(
             icons::ELECTRIC_BOLT,
-            "Power",
+            "消費電力",
             Box::new(move || {
                 let w = b.energy_rate();
                 (w > 0.05).then(|| {
@@ -288,12 +290,12 @@ fn stats(b: Battery) -> Div {
         ))
         .child(tile(
             icons::HEALTH_AND_SAFETY,
-            "Health",
+            "バッテリー状態",
             Box::new(move || b.health().map(|h| format!("{h:.0}%"))),
         ))
         .child(tile(
             icons::AUTORENEW,
-            "Cycles",
+            "サイクル数",
             Box::new(move || b.charge_cycles().map(|c| c.to_string())),
         ))
 }

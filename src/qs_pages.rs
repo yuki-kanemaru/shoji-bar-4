@@ -205,7 +205,7 @@ impl Wifi {
                 Err(NetError::NeedsSecret) => {
                     self.asking.set(Some(ssid.clone()));
                     self.failed
-                        .set(Some((ssid, "It needs its password".into())));
+                        .set(Some((ssid, "パスワードが必要です".into())));
                 }
                 Err(e) => self.failed.set(Some((ssid, e.to_string()))),
             }
@@ -314,10 +314,10 @@ pub fn wifi_page() -> Div {
             move || {
                 section().child(item(
                     || icons::LAN,
-                    || "Ethernet".into(),
+                    || "有線LAN".into(),
                     move || match net.wired() {
-                        Some(w) if w.speed > 0 => format!("Connected · {} Mb/s", w.speed),
-                        _ => "Connected".into(),
+                        Some(w) if w.speed > 0 => format!("接続済み · {} Mb/s", w.speed),
+                        _ => "接続済み".into(),
                     },
                     || true,
                     div(),
@@ -326,20 +326,20 @@ pub fn wifi_page() -> Div {
         ))
         .child(show(
             move || !on.get(),
-            || section().child(nothing(icons::WIFI_OFF, || "Wi-Fi is off".into())),
+            || section().child(nothing(icons::WIFI_OFF, || "Wi-Fi はオフです".into())),
         ))
         .child(show(
             move || on.get() && net.wifi().is_some(),
             move || {
-                section().child(subheading("Connected")).child(item(
+                section().child(subheading("接続済み")).child(item(
                     move || net.wifi().map_or(icons::WIFI, |a| wifi_symbol(&a)),
                     move || net.wifi().map(|a| a.ssid).unwrap_or_default(),
                     move || {
                         let reach = match net.connectivity() {
-                            Connectivity::Full => "Connected",
-                            Connectivity::Limited => "No internet",
-                            Connectivity::Portal => "Sign in to the network",
-                            _ => "Connected",
+                            Connectivity::Full => "接続済み",
+                            Connectivity::Limited => "インターネット接続なし",
+                            Connectivity::Portal => "ネットワークにサインイン",
+                            _ => "接続済み",
                         };
                         match net.wifi() {
                             Some(a) => format!("{reach} · {}", band(a.frequency)),
@@ -356,15 +356,15 @@ pub fn wifi_page() -> Div {
             move || on.get(),
             move || {
                 section()
-                    .child(subheading("Networks"))
+                    .child(subheading("ネットワーク"))
                     .child(show(
                         move || others.with(Vec::is_empty),
                         move || {
                             nothing(icons::WIFI_FIND, move || {
                                 if w.scanning.get() {
-                                    "Looking for networks…".into()
+                                    "ネットワークを検索中…".into()
                                 } else {
-                                    "No networks found".into()
+                                    "ネットワークが見つかりません".into()
                                 }
                             })
                         },
@@ -421,7 +421,7 @@ fn network_row(w: Wifi, ssid: String) -> Div {
                 move || name.clone(),
                 move || {
                     if busy.get() {
-                        return "Connecting…".into();
+                        return "接続中…".into();
                     }
                     if let Some(why) = error.get() {
                         return why;
@@ -429,11 +429,11 @@ fn network_row(w: Wifi, ssid: String) -> Div {
                     ap.with(|a| match a {
                         Some(a) => {
                             let what = if a.known {
-                                "Saved"
+                                "保存済み"
                             } else if a.security == Security::Open {
-                                "Open"
+                                "オープン"
                             } else {
-                                "Secured"
+                                "保護あり"
                             };
                             format!("{what} · {}", band(a.frequency))
                         }
@@ -465,7 +465,7 @@ fn network_row(w: Wifi, ssid: String) -> Div {
                             text_field(
                                 w.password,
                                 TextFieldStyle::new()
-                                    .label("Password")
+                                    .label("パスワード")
                                     .password()
                                     .error_when(move || error.with(Option::is_some))
                                     .on_submit(move |_| w.submit(&field_ssid)),
@@ -479,11 +479,11 @@ fn network_row(w: Wifi, ssid: String) -> Div {
                                 .justify_end()
                                 .gap(8.0_f32)
                                 .child(
-                                    styled_button("Cancel", ButtonStyle::text())
+                                    styled_button("キャンセル", ButtonStyle::text())
                                         .on_click(move |_| w.asking.set(None)),
                                 )
                                 .child(
-                                    styled_button("Connect", ButtonStyle::filled())
+                                    styled_button("接続", ButtonStyle::filled())
                                         .on_click(move |_| w.submit(&button_ssid)),
                                 ),
                         )
@@ -641,22 +641,22 @@ pub fn bluetooth_page() -> Div {
             move || !powered.get(),
             || {
                 section().child(nothing(icons::BLUETOOTH_DISABLED, || {
-                    "Bluetooth is off".into()
+                    "Bluetooth はオフです".into()
                 }))
             },
         ))
         .child(show(
             move || powered.get() && !paired.with(Vec::is_empty),
-            move || section().child(subheading("Paired")).child(list(paired)),
+            move || section().child(subheading("ペアリング済み")).child(list(paired)),
         ))
         .child(show(
             move || powered.get(),
             move || {
                 section()
-                    .child(subheading("Available"))
+                    .child(subheading("利用可能なデバイス"))
                     .child(show(
                         move || around.with(Vec::is_empty),
-                        || nothing(icons::BLUETOOTH_SEARCHING, || "Looking for devices…".into()),
+                        || nothing(icons::BLUETOOTH_SEARCHING, || "デバイスを検索中…".into()),
                     ))
                     .child(show(
                         move || !around.with(Vec::is_empty),
@@ -699,11 +699,11 @@ fn device_row(b: Bt, address: String) -> Div {
         move || {
             if busy.get() {
                 return if connected() {
-                    "Disconnecting…".into()
+                    "切断中…".into()
                 } else if paired() {
-                    "Connecting…".into()
+                    "接続中…".into()
                 } else {
-                    "Pairing…".into()
+                    "ペアリング中…".into()
                 };
             }
             if let Some(why) = error.get() {
@@ -711,11 +711,11 @@ fn device_row(b: Bt, address: String) -> Div {
             }
             device.with(|d| match d {
                 Some(d) if d.connected => match d.battery {
-                    Some(level) => format!("Connected · {level}%"),
-                    None => "Connected".into(),
+                    Some(level) => format!("接続済み · {level}%"),
+                    None => "接続済み".into(),
                 },
-                Some(d) if d.paired => "Paired".into(),
-                _ => "Click to pair".into(),
+                Some(d) if d.paired => "ペアリング済み".into(),
+                _ => "クリックしてペアリング".into(),
             })
         },
         connected,
@@ -802,7 +802,7 @@ pub fn sound_page() -> Div {
                     },
                     move || {
                         if chosen() {
-                            "In use".into()
+                            "使用中".into()
                         } else {
                             String::new()
                         }
@@ -884,16 +884,16 @@ pub fn sound_page() -> Div {
         .flex()
         .flex_col()
         .gap(10.0_f32)
-        .child(header("Sound", div()))
+        .child(header("サウンド", div()))
         .child(
             section()
-                .child(subheading("Output"))
+                .child(subheading("出力"))
                 .child(level(false))
                 .child(scrolling(device_list(false))),
         )
         .child(
             section()
-                .child(subheading("Input"))
+                .child(subheading("入力"))
                 .child(level(true))
                 .child(scrolling(device_list(true))),
         )
@@ -901,7 +901,7 @@ pub fn sound_page() -> Div {
             move || !streams.with(Vec::is_empty),
             move || {
                 section()
-                    .child(subheading("Apps"))
+                    .child(subheading("アプリ"))
                     .child(scrolling(for_each(
                         move || streams.get(),
                         |id| *id,

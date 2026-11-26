@@ -210,7 +210,7 @@ impl State {
             Err(refused) => {
                 self.phase.set(Phase::Typing);
                 self.said.set(match refused {
-                    Refused::WrongPassword => "Wrong password".into(),
+                    Refused::WrongPassword => "パスワードが違います".into(),
                     Refused::Told(why) | Refused::Other(why) => why,
                 });
                 // Pushed aside and let go on a loose spring, it shakes.
@@ -330,7 +330,7 @@ fn clock() -> Div {
 
 fn date() -> Div {
     txt(TextStyle::TITLE_LARGE, || {
-        local_time(Every::Minute).format("%A, %-d %B")
+        jp_date_medium(local_time(Every::Minute))
     })
     .opacity(0.85_f32)
 }
@@ -376,7 +376,7 @@ fn field(state: State) -> Div {
                         .items_center()
                         .justify_center()
                         .opacity(0.7_f32)
-                        .child(static_txt(TextStyle::BODY_LARGE, "Enter password"))
+                        .child(static_txt(TextStyle::BODY_LARGE, "パスワードを入力"))
                 },
             )
             .appear()

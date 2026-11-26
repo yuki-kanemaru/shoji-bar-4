@@ -69,12 +69,12 @@ impl Palette {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::TonalSpot => "Tonal",
-            Self::Vibrant => "Vibrant",
-            Self::Expressive => "Expressive",
-            Self::Fidelity => "Fidelity",
-            Self::Neutral => "Neutral",
-            Self::Monochrome => "Mono",
+            Self::TonalSpot => "トーナル",
+            Self::Vibrant => "ビビッド",
+            Self::Expressive => "表現豊か",
+            Self::Fidelity => "忠実",
+            Self::Neutral => "ニュートラル",
+            Self::Monochrome => "モノクロ",
         }
     }
 
@@ -100,9 +100,9 @@ impl BarPosition {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Top => "Top",
-            Self::Left => "Left",
-            Self::Right => "Right",
+            Self::Top => "上",
+            Self::Left => "左",
+            Self::Right => "右",
         }
     }
 

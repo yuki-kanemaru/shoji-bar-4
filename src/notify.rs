@@ -174,9 +174,9 @@ pub fn card(n: Notification, popup: bool) -> Div {
                             txt(TextStyle::LABEL_SMALL, move || {
                                 let ago = when.elapsed().as_secs();
                                 let ago = match ago {
-                                    0..60 => "now".to_owned(),
-                                    60..3600 => format!("{} min", ago / 60),
-                                    _ => format!("{} h", ago / 3600),
+                                    0..60 => "たった今".to_owned(),
+                                    60..3600 => format!("{}分前", ago / 60),
+                                    _ => format!("{}時間前", ago / 3600),
                                 };
                                 local_time(Every::Minute);
                                 if app.is_empty() {
@@ -245,14 +245,14 @@ pub fn history(order: usize) -> Div {
                 .h(28.0)
                 .px(6.0_f32)
                 .child(sym(icons::NOTIFICATIONS, 18.0, |c| c.primary))
-                .child(static_txt(TextStyle::TITLE_SMALL, "Notifications").flex_1())
+                .child(static_txt(TextStyle::TITLE_SMALL, "通知").flex_1())
                 .child(
                     show(
                         move || any.get(),
                         move || {
                             let clear = clear.clone();
                             styled_button(
-                                "Clear all",
+                                "すべて消去",
                                 ButtonStyle::text().size(ButtonSize::ExtraSmall),
                             )
                             .on_click(move |_| {
@@ -295,10 +295,10 @@ pub fn history(order: usize) -> Div {
                     let (symbol, said) = if elsewhere {
                         (
                             icons::NOTIFICATIONS_PAUSED,
-                            "Another app shows notifications",
+                            "他のアプリが通知を管理中です",
                         )
                     } else {
-                        (icons::NOTIFICATIONS_OFF, "No notifications")
+                        (icons::NOTIFICATIONS_OFF, "通知はありません")
                     };
                     div()
                         .flex()

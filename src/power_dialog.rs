@@ -32,25 +32,25 @@ impl Ask {
 
     fn title(self) -> &'static str {
         match self {
-            Ask::LogOut => "Log out?",
-            Ask::Restart => "Restart?",
-            Ask::PowerOff => "Shut down?",
+            Ask::LogOut => "ログアウトしますか？",
+            Ask::Restart => "再起動しますか？",
+            Ask::PowerOff => "シャットダウンしますか？",
         }
     }
 
     fn text(self) -> &'static str {
         match self {
-            Ask::LogOut => "Open apps will be closed and the session will end.",
-            Ask::Restart => "Open apps will be closed and the computer will start again.",
-            Ask::PowerOff => "Open apps will be closed and the computer will turn off.",
+            Ask::LogOut => "開いているアプリを閉じてセッションを終了します。",
+            Ask::Restart => "開いているアプリを閉じて再起動します。",
+            Ask::PowerOff => "開いているアプリを閉じて電源を切ります。",
         }
     }
 
     fn action(self) -> &'static str {
         match self {
-            Ask::LogOut => "Log out",
-            Ask::Restart => "Restart",
-            Ask::PowerOff => "Shut down",
+            Ask::LogOut => "ログアウト",
+            Ask::Restart => "再起動",
+            Ask::PowerOff => "シャットダウン",
         }
     }
 }
@@ -151,7 +151,7 @@ pub fn panel() -> Div {
                 .justify_end()
                 .items_center()
                 .gap(8.0_f32)
-                .child(text_button("Cancel").on_click(|_| crate::panels::close()))
+                .child(text_button("キャンセル").on_click(|_| crate::panels::close()))
                 .child(action_button(what, on_action)),
         )
 }

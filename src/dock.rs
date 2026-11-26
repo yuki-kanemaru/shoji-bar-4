@@ -497,7 +497,7 @@ fn menu_groups(
     };
     let mut groups = Vec::new();
     if let Some(app) = entry.app.clone() {
-        let mut first = vec![menu_item("New window").icon(icons::ADD).on_click({
+        let mut first = vec![menu_item("新しいウィンドウ").icon(icons::ADD).on_click({
             let app = app.clone();
             move || {
                 launching.set(Some(Instant::now()));
@@ -513,11 +513,11 @@ fn menu_groups(
         groups.push(first);
         let id = bare(&app.id).to_owned();
         groups.push(vec![if entry.pinned {
-            menu_item("Unpin").icon(icons::PUSH_PIN).on_click(move || {
+            menu_item("ピン留めを外す").icon(icons::PUSH_PIN).on_click(move || {
                 settings().update(|s| s.pinned.retain(|p| bare(p) != id));
             })
         } else {
-            menu_item("Pin to dock")
+            menu_item("ドックにピン留め")
                 .icon(icons::PUSH_PIN)
                 .on_click(move || {
                     settings().update(|s| s.pinned.push(id.clone()));
@@ -526,9 +526,9 @@ fn menu_groups(
     }
     if !windows.is_empty() {
         let label = if windows.len() == 1 {
-            "Close".to_owned()
+            "閉じる".to_owned()
         } else {
-            format!("Close {} windows", windows.len())
+            format!("{}個のウィンドウを閉じる", windows.len())
         };
         groups.push(vec![menu_item(label).icon(icons::CLOSE).on_click(
             move || {
