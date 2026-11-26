@@ -15,7 +15,9 @@ use std::time::{Duration, Instant};
 
 pub fn panel() -> Div {
     let selected = signal(None::<(i32, u32, u32)>);
+    let filters_open = signal(false);
     div()
+        .w(GRID_W + 56.0)
         .flex()
         .flex_col()
         .gap(14.0_f32)
@@ -27,8 +29,8 @@ pub fn panel() -> Div {
             s.bg(c.surface_container).text_color(c.on_surface)
         })
         .child(settle_in(0, header()))
-        .child(settle_in(1, month_view(selected)))
-        .child(settle_in(2, crate::schedule::agenda_section(selected)))
+        .child(settle_in(1, month_view(selected, filters_open)))
+        .child(settle_in(2, crate::schedule::agenda_section(selected, filters_open)))
 }
 
 /// The time with its seconds rolling, and the day.
@@ -157,7 +159,7 @@ fn pop_in(order: u32, node: Div) -> Div {
 /// The month: its name between the arrows to the ones around it, the days of the week, and its
 /// weeks, which slide over when it changes. The wheel goes through the months too, and the name
 /// goes back to this one.
-fn month_view(selected: Signal<Option<(i32, u32, u32)>>) -> Div {
+fn month_view(selected: Signal<Option<(i32, u32, u32)>>, filters_open: Signal<bool>) -> Div {
     let today = memo(|| {
         let t = local_time(Every::Minute);
         Date::new(t.year, t.month as u32, t.day as u32)
@@ -187,6 +189,7 @@ fn month_view(selected: Signal<Option<(i32, u32, u32)>>) -> Div {
             .on_click(move |_| {
                 shown.set(untrack(|| this_month.get()));
                 selected.set(None);
+                filters_open.set(false);
             })
             .child(
                 for_each(
@@ -272,7 +275,7 @@ fn month_view(selected: Signal<Option<(i32, u32, u32)>>) -> Div {
     // Only the month it shows first comes in one day after another.
     let first = Cell::new(true);
     let strip = for_each(visible, |m| *m, move |m| {
-        weeks(m, today, selected, first.replace(false))
+        weeks(m, today, selected, filters_open, first.replace(false))
             .absolute()
             .top(0.0)
             .w(GRID_W)
@@ -322,7 +325,7 @@ fn month_view(selected: Signal<Option<(i32, u32, u32)>>) -> Div {
 }
 
 /// The six weeks of a month. With `cascade`, the days come in one after another.
-fn weeks(month: i32, today: Memo<Date>, selected: Signal<Option<(i32, u32, u32)>>, cascade: bool) -> Div {
+fn weeks(month: i32, today: Memo<Date>, selected: Signal<Option<(i32, u32, u32)>>, filters_open: Signal<bool>, cascade: bool) -> Div {
     let all = days_shown(month);
     div().flex().flex_col().children(
         all.chunks(7)
@@ -332,7 +335,7 @@ fn weeks(month: i32, today: Memo<Date>, selected: Signal<Option<(i32, u32, u32)>
                     week.iter()
                         .enumerate()
                         .map(|(column, &(date, of_month))| {
-                            let cell = day(date, of_month, today, selected);
+                            let cell = day(date, of_month, today, selected, filters_open);
                             if cascade {
                                 // After the days of the week.
                                 pop_in((row + 1 + column) as u32, cell)
@@ -354,6 +357,7 @@ fn day(
     of_month: bool,
     today: Memo<Date>,
     selected: Signal<Option<(i32, u32, u32)>>,
+    filters_open: Signal<bool>,
 ) -> Div {
     let is_today = memo(move || today.get() == date);
     let is_selected = memo(move || {
@@ -382,6 +386,7 @@ fn day(
         .z_index(0)
         .on_hover(move |h| hovered.set(h))
         .on_click(move |_| {
+            filters_open.set(false);
             let key = (date.year, date.month, date.day);
             if untrack(|| is_today.get()) {
                 selected.set(None);
