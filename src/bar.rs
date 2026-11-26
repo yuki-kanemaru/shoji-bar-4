@@ -82,17 +82,7 @@ pub fn view(output: Output, at: BarPlacement) -> Div {
                 ))
                 .child(window_island(output.clone(), at)),
         )
-        .child(if vertical {
-            clock_island(output.clone(), at)
-        } else {
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(8.0_f32)
-                .child(clock_island(output.clone(), at))
-                .child(crate::schedule::next_event_island(output.clone(), at))
-        })
+        .child(clock_island(output.clone(), at))
         .child(
             trailing
                 .child(media_island(output.clone(), at))
@@ -802,19 +792,21 @@ fn clock_island(output: Output, at: BarPlacement) -> Div {
     let content = if vertical {
         content
     } else {
-        content.child(
-            txt(TextStyle::LABEL_SMALL, || {
-                local_time(Every::Minute).format("%a %-d %b")
-            })
-            .dyn_style(move |s| {
-                let c = colors();
-                s.text_color(if open.get() {
-                    c.on_primary_container
-                } else {
-                    c.on_surface_variant
+        content
+            .child(
+                txt(TextStyle::LABEL_SMALL, || {
+                    local_time(Every::Minute).format("%a %-d %b")
                 })
-            }),
-        )
+                .dyn_style(move |s| {
+                    let c = colors();
+                    s.text_color(if open.get() {
+                        c.on_primary_container
+                    } else {
+                        c.on_surface_variant
+                    })
+                }),
+            )
+            .child(crate::schedule::next_event_inline(open))
     };
     pressable(content, |c| c.on_surface)
 }

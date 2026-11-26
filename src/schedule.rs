@@ -2,14 +2,14 @@
 //! - `~/.local/state/calendar-bar/events.json`
 //! - `~/.config/calendar-bar/genres.json`
 //!
-//! Provides the top bar next-event island and the calendar panel agenda + filter tabs.
+//! Provides the inline next-event widget inside the top bar clock pill and the calendar panel's
+//! agenda + filter card.
 
-use crate::panels::{Panel, is_open, toggle};
-use crate::placement::BarPlacement;
 use crate::theme::{TextStyle, colors, is_dark};
 use crate::ui::*;
 use anti_webui::prelude::*;
 use anti_webui::shell::prelude::*;
+use anti_webui_md3e::icons;
 use serde_json::Value;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
@@ -18,7 +18,6 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const FRESHNESS_SECS: i64 = 15 * 60;
-const AGENDA_WIDTH: f32 = 336.0;
 const AGENDA_MAX_H: f32 = 200.0;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -92,7 +91,7 @@ impl GenreSettings {
 
     pub fn tint(&self, calendar_id: &str, dark: bool) -> Color {
         self.accent(calendar_id, dark)
-            .with_alpha(if dark { 0.14 } else { 0.08 })
+            .with_alpha(if dark { 0.16 } else { 0.10 })
     }
 }
 
@@ -323,7 +322,6 @@ fn show_all_calendars() {
 
 // --- Zero-dependency date / RFC3339 math ---
 
-/// Days since 1970-01-01 (Howard Hinnant's algorithm).
 fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
     let y = i64::from(year) - if month <= 2 { 1 } else { 0 };
     let era = if y >= 0 { y } else { y - 399 } / 400;
@@ -335,7 +333,6 @@ fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
     era * 146_097 + doe as i64 - 719_468
 }
 
-/// Civil (year, month, day) from days since 1970-01-01.
 fn civil_from_days(z: i64) -> (i32, u32, u32) {
     let z = z + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
@@ -372,7 +369,6 @@ fn parse_u32(s: &str) -> Option<u32> {
     s.parse().ok()
 }
 
-/// Parses either `YYYY-MM-DD` (as local midnight) or RFC3339 (`YYYY-MM-DDTHH:MM:SS[.frac][Z|±HH:MM]`).
 fn parse_timestamp(s: &str, local_tz_offset: i64) -> Option<i64> {
     let s = s.trim();
     if s.len() < 10 {
@@ -616,75 +612,74 @@ fn compute_day_events(state: &ScheduleState, now: NowContext, day_offset: i64) -
         .collect()
 }
 
-/// Top-bar floating pill showing the next upcoming event; clicking toggles the calendar panel.
-pub fn next_event_island(output: Output, at: BarPlacement) -> Show {
-    let vertical = at.is_vertical();
-    show(
-        move || !vertical,
-        move || {
-            let sig = state_signal();
-            let open = memo({
-                let output = output.clone();
-                move || is_open(&output, Panel::Calendar)
-            });
-            let display = memo(move || {
-                let now = current_now();
-                sig.with(|s| compute_next_event(s, now))
-            });
-            let dot_color = memo(move || {
-                let dark = is_dark();
-                let cal_id = display.with(|d| d.calendar_id.clone());
-                sig.with(|s| {
-                    if s.genres.enabled {
-                        cal_id.map(|id| s.genres.accent(&id, dark))
-                    } else {
-                        None
-                    }
-                })
-            });
-            let text_style = TextStyle {
-                size: 13.0,
-                line_height: 18.0,
-                letter_spacing: 0.0,
-                weight: 500,
-            };
-            let content = island()
-                .px(12.0_f32)
-                .gap(7.0_f32)
-                .max_w(260.0)
-                .overflow_hidden()
-                .on_click({
-                    let output = output.clone();
-                    move |_| toggle(&output, Panel::Calendar)
-                })
+/// Inline next-event segment rendered inside the top bar's single clock island.
+pub fn next_event_inline(open: Memo<bool>) -> Div {
+    let sig = state_signal();
+    let display = memo(move || {
+        let now = current_now();
+        sig.with(|s| compute_next_event(s, now))
+    });
+    let dot_color = memo(move || {
+        let dark = is_dark();
+        let cal_id = display.with(|d| d.calendar_id.clone());
+        sig.with(|s| {
+            if s.genres.enabled {
+                cal_id.map(|id| s.genres.accent(&id, dark))
+            } else {
+                None
+            }
+        })
+    });
+    let text_style = TextStyle {
+        size: 13.0,
+        line_height: 18.0,
+        letter_spacing: 0.0,
+        weight: 500,
+    };
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(7.0_f32)
+        .pl(2.0_f32)
+        .child(
+            div()
+                .w(1.0)
+                .h(14.0)
+                .rounded(1.0_f32)
+                .flex_none()
                 .dyn_style(move |s| {
                     let c = colors();
-                    if open.get() {
-                        s.bg(c.primary_container).text_color(c.on_primary_container)
+                    s.bg(if open.get() {
+                        c.on_primary_container.with_alpha(0.35)
                     } else {
-                        s
-                    }
-                })
-                .child(show(
-                    move || dot_color.get().is_some(),
-                    move || {
-                        div()
-                            .size(6.0)
-                            .rounded(3.0_f32)
-                            .flex_none()
-                            .dyn_style(move |s| {
-                                s.bg(dot_color.get().unwrap_or_else(|| colors().primary))
-                            })
-                    },
-                ))
-                .child(
-                    txt(text_style, move || display.with(|d| d.text.clone()))
-                        .max_w(232.0)
-                        .overflow_hidden(),
-                );
-            pressable(content, |c| c.on_surface)
-        },
-    )
+                        c.outline_variant
+                    })
+                }),
+        )
+        .child(show(
+            move || dot_color.get().is_some(),
+            move || {
+                div()
+                    .size(6.0)
+                    .rounded(3.0_f32)
+                    .flex_none()
+                    .dyn_style(move |s| s.bg(dot_color.get().unwrap_or_else(|| colors().primary)))
+            },
+        ))
+        .child(
+            txt(text_style, move || display.with(|d| d.text.clone()))
+                .max_w(240.0)
+                .overflow_hidden()
+                .dyn_style(move |s| {
+                    let c = colors();
+                    s.text_color(if open.get() {
+                        c.on_primary_container
+                    } else {
+                        c.on_surface
+                    })
+                }),
+        )
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -694,7 +689,7 @@ enum AgendaTab {
     Calendars,
 }
 
-/// Schedule section inside the calendar panel: Today / Tomorrow agenda + calendar visibility filter.
+/// Schedule card inside the calendar panel, styled to match `month_view()` and `gauges()`.
 pub fn agenda_section() -> Div {
     let sig = state_signal();
     let tab = signal(AgendaTab::Today);
@@ -723,7 +718,9 @@ pub fn agenda_section() -> Div {
                 .items_center()
                 .justify_center()
                 .on_click(move |_| {
-                    if target == AgendaTab::Calendars && untrack(|| tab.get()) == AgendaTab::Calendars {
+                    if target == AgendaTab::Calendars
+                        && untrack(|| tab.get()) == AgendaTab::Calendars
+                    {
                         tab.set(AgendaTab::Today);
                     } else {
                         tab.set(target);
@@ -734,8 +731,7 @@ pub fn agenda_section() -> Div {
                     if active.get() {
                         s.bg(c.primary_container).text_color(c.on_primary_container)
                     } else {
-                        s.bg(c.surface_container_high)
-                            .text_color(c.on_surface_variant)
+                        s.bg(c.surface_container).text_color(c.on_surface_variant)
                     }
                 })
                 .child(static_txt(TextStyle::LABEL_LARGE, label)),
@@ -744,27 +740,27 @@ pub fn agenda_section() -> Div {
     };
 
     div()
-        .w(AGENDA_WIDTH)
+        .w_full()
+        .p(12.0_f32)
+        .rounded(20.0_f32)
         .flex()
         .flex_col()
         .gap(8.0_f32)
-        .child(
-            div()
-                .h(1.0)
-                .dyn_style(|s| s.bg(colors().outline_variant.with_alpha(0.5))),
-        )
+        .dyn_style(|s| s.bg(colors().surface_container_high))
         .child(dyn_view(move || {
             if let Some(msg) = status_message.get() {
                 return div()
-                    .px(12.0_f32)
-                    .py(10.0_f32)
-                    .rounded(14.0_f32)
-                    .dyn_style(|s| {
-                        let c = colors();
-                        s.bg(c.surface_container_high)
-                            .text_color(c.on_surface_variant)
-                    })
-                    .child(static_txt(TextStyle::BODY_MEDIUM, msg))
+                    .px(6.0_f32)
+                    .py(4.0_f32)
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(8.0_f32)
+                    .child(sym(icons::CALENDAR_TODAY, 16.0, |c| c.on_surface_variant))
+                    .child(
+                        static_txt(TextStyle::BODY_MEDIUM, msg)
+                            .dyn_style(|s| s.text_color(colors().on_surface_variant)),
+                    )
                     .into_view();
             }
             div()
@@ -811,8 +807,7 @@ fn day_events_list(sig: Signal<ScheduleState>, day_offset: i64) -> Div {
                     .justify_center()
                     .dyn_style(|s| {
                         let c = colors();
-                        s.bg(c.surface_container_high)
-                            .text_color(c.on_surface_variant)
+                        s.bg(c.surface_container).text_color(c.on_surface_variant)
                     })
                     .child(static_txt(TextStyle::BODY_MEDIUM, "予定なし"))
                     .into_view();
@@ -864,7 +859,7 @@ fn event_card(sig: Signal<ScheduleState>, ev: AgendaItem) -> Div {
         let s = if upcoming && enabled {
             s.bg(tint)
         } else {
-            s.bg(c.surface_container_high)
+            s.bg(c.surface_container)
         };
         let s = if upcoming {
             s.border_color(if enabled { accent } else { c.primary })
@@ -945,7 +940,7 @@ fn calendar_filters_list(sig: Signal<ScheduleState>) -> Div {
                 .on_click(|_| show_all_calendars())
                 .dyn_style(|s| {
                     let c = colors();
-                    s.bg(c.surface_container_high).text_color(c.primary)
+                    s.bg(c.surface_container).text_color(c.primary)
                 })
                 .child(static_txt(TextStyle::LABEL_MEDIUM, "すべて表示")),
             |c| c.on_surface,
@@ -968,7 +963,7 @@ fn calendar_filters_list(sig: Signal<ScheduleState>) -> Div {
                         .items_center()
                         .gap(8.0_f32)
                         .on_click(move |_| toggle_calendar(&id_click))
-                        .dyn_style(|s| s.bg(colors().surface_container_high))
+                        .dyn_style(|s| s.bg(colors().surface_container))
                         .child(
                             div()
                                 .size(18.0)
