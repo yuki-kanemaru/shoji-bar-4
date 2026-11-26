@@ -7,10 +7,8 @@ use crate::theme::{TextStyle, colors, elevation};
 use crate::ui::*;
 use anti_webui::prelude::*;
 use anti_webui::shell::prelude::*;
-use anti_webui_md3e::components::{
-    Date, MaterialShape, ShapeStyle, circular_wavy_progress, styled_shape,
-};
-use anti_webui_md3e::icons::{self, Symbol};
+use anti_webui_md3e::components::{Date, MaterialShape, ShapeStyle, styled_shape};
+use anti_webui_md3e::icons;
 use anti_webui_md3e::motion::fast_spatial;
 use std::cell::Cell;
 use std::time::{Duration, Instant};
@@ -30,8 +28,7 @@ pub fn panel() -> Div {
         .child(settle_in(0, header()))
         .child(settle_in(1, month_view()))
         .child(settle_in(2, crate::schedule::agenda_section()))
-        // After the days, which come in over about a quarter of a second.
-        .child(settle_in(6, gauges()))
+
 }
 
 /// The time with its seconds rolling, and the day.
@@ -407,94 +404,4 @@ fn day(date: Date, of_month: bool, today: Memo<Date>) -> Div {
                 c.on_surface.with_alpha(0.38)
             })
         })
-}
-
-/// CPU, memory and temperature as wavy rings.
-fn gauges() -> Div {
-    let sys = std::rc::Rc::new(system_every(Duration::from_secs(2)));
-    let cpu = memo({
-        let sys = sys.clone();
-        move || sys.cpu()
-    });
-    let memory = memo({
-        let sys = sys.clone();
-        move || {
-            let m = sys.memory();
-            (m.used, m.total)
-        }
-    });
-    let heat = memo(move || sys.cpu_temperature());
-    let gauge = |symbol: &'static Symbol,
-                 label: &'static str,
-                 value: Box<dyn Fn() -> f32>,
-                 shown: Box<dyn Fn() -> String>| {
-        let value: std::rc::Rc<dyn Fn() -> f32> = value.into();
-        div()
-            .flex_1()
-            .flex()
-            .flex_col()
-            .items_center()
-            .gap(8.0_f32)
-            .px(8.0_f32)
-            .py(14.0_f32)
-            .rounded(20.0_f32)
-            .dyn_style(|s| s.bg(colors().surface_container_high))
-            .child(
-                // The ring is as big as it draws itself; the icon sits in its middle.
-                div()
-                    .relative()
-                    .flex_none()
-                    .child(circular_wavy_progress(move || value()))
-                    .child(
-                        div()
-                            .absolute()
-                            .inset(0.0)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(sym(symbol, 18.0, |c| c.primary)),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .child(txt(TextStyle::TITLE_SMALL, shown))
-                    .child(
-                        static_txt(TextStyle::LABEL_SMALL, label)
-                            .dyn_style(|s| s.text_color(colors().on_surface_variant)),
-                    ),
-            )
-    };
-    let gib = |b: u64| b as f64 / (1u64 << 30) as f64;
-    div()
-        .flex()
-        .flex_row()
-        .gap(10.0_f32)
-        .child(gauge(
-            icons::SPEED,
-            "CPU",
-            Box::new(move || cpu.get() as f32),
-            Box::new(move || format!("{:.0}%", cpu.get() * 100.0)),
-        ))
-        .child(gauge(
-            icons::MEMORY,
-            "メモリ",
-            Box::new(move || {
-                let (used, total) = memory.get();
-                (used as f64 / total.max(1) as f64) as f32
-            }),
-            Box::new(move || format!("{:.1} GiB", gib(memory.get().0))),
-        ))
-        .child(gauge(
-            icons::THERMOSTAT,
-            "温度",
-            Box::new(move || ((heat.get().unwrap_or(0.0) - 30.0) / 70.0).clamp(0.0, 1.0) as f32),
-            Box::new(move || {
-                heat.get()
-                    .map(|t| format!("{t:.0}°C"))
-                    .unwrap_or_else(|| "—".into())
-            }),
-        ))
 }
