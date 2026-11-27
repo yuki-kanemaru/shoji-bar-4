@@ -588,7 +588,7 @@ fn compute_next_event(state: &ScheduleState, now: NowContext) -> NextEventDispla
         };
     }
 
-    let mut upcoming: Vec<(&CalEvent, i64)> = Vec::new();
+    let mut upcoming: Vec<(&CalEvent, i64, (i32, u32, u32))> = Vec::new();
     for ev in &state.events.events {
         if !state.genres.is_visible(&ev.calendar_id) {
             continue;
@@ -601,15 +601,23 @@ fn compute_next_event(state: &ScheduleState, now: NowContext) -> NextEventDispla
             .as_deref()
             .and_then(|s| parse_timestamp(s, now.tz_offset));
         let (sy, sm, sd, _, _) = unix_to_local_parts(start, now.tz_offset);
-        let matches = start >= now.utc_secs
-            || (ev.all_day
-                && start <= now.utc_secs
-                && match end {
-                    Some(e) => e > now.utc_secs,
-                    None => (sy, sm, sd) == now.today,
-                });
+        let matches = if ev.all_day {
+            start >= now.utc_secs
+                || (start <= now.utc_secs
+                    && end
+                        .map(|e| e > now.utc_secs)
+                        .unwrap_or((sy, sm, sd) == now.today))
+        } else {
+            start >= now.utc_secs || end.is_some_and(|e| e > now.utc_secs)
+        };
         if matches {
-            upcoming.push((ev, start));
+            // Ongoing events are treated as today's so the earliest real date wins.
+            let eff_date = if start <= now.utc_secs {
+                now.today
+            } else {
+                (sy, sm, sd)
+            };
+            upcoming.push((ev, start, eff_date));
         }
     }
 
@@ -624,11 +632,12 @@ fn compute_next_event(state: &ScheduleState, now: NowContext) -> NextEventDispla
         };
     }
 
-    let (ev, start) = upcoming
+    // Earliest effective date first; within the same day a timed event beats an
+    // all-day one, then earlier start wins.
+    let (ev, start, _) = *upcoming
         .iter()
-        .find(|(e, _)| !e.all_day)
-        .copied()
-        .unwrap_or(upcoming[0]);
+        .min_by_key(|(e, start, eff_date)| (*eff_date, e.all_day, *start))
+        .expect("upcoming is not empty");
     let (sy, sm, sd, hh, mm) = unix_to_local_parts(start, now.tz_offset);
     let date_prefix = if (sy, sm, sd) == now.today {
         String::new()
@@ -687,7 +696,11 @@ fn compute_events_for_date(
     let next_index = if date == now.today {
         matched
             .iter()
-            .position(|(ev, from, _)| !ev.all_day && *from >= now.utc_secs)
+            .position(|(ev, from, to)| {
+                !ev.all_day
+                    && (*from >= now.utc_secs
+                        || to.is_some_and(|e| e > now.utc_secs))
+            })
     } else {
         None
     };
@@ -1356,6 +1369,93 @@ mod tests {
             genres: GenreSettings::default(),
         };
         assert_eq!(compute_next_event(&stale, now).text, "予定を更新できません");
+    }
+
+    fn test_state(events_json: &str) -> ScheduleState {
+        ScheduleState {
+            events: parse_events_json(events_json),
+            genres: GenreSettings::default(),
+        }
+    }
+
+    #[test]
+    fn next_event_includes_ongoing_timed_event() {
+        let jst = 9 * 3600;
+        let now = NowContext {
+            utc_secs: parse_timestamp("2026-11-26T10:25:00+09:00", jst).unwrap(),
+            tz_offset: jst,
+            today: (2026, 11, 26),
+        };
+        let state = test_state(
+            r#"{
+              "status": "ok",
+              "updated_at": "2026-11-26T10:20:00+09:00",
+              "events": [
+                {"title": "Lab", "start": "2026-11-26T10:00:00+09:00", "end": "2026-11-26T20:00:00+09:00", "all_day": false, "calendar_id": "s", "calendar_name": "School"},
+                {"title": "Later", "start": "2026-11-26T18:00:00+09:00", "end": "2026-11-26T19:00:00+09:00", "all_day": false, "calendar_id": "s", "calendar_name": "School"}
+              ]
+            }"#,
+        );
+
+        let next = compute_next_event(&state, now);
+        assert_eq!(next.text, "10:00 Lab");
+        assert_eq!(next.calendar_id.as_deref(), Some("s"));
+
+        let today_items = compute_events_for_date(&state, now, (2026, 11, 26));
+        assert!(
+            today_items[0].upcoming,
+            "ongoing timed event should be highlighted"
+        );
+        assert!(!today_items[1].upcoming);
+    }
+
+    #[test]
+    fn next_event_prefers_tomorrows_all_day_over_later_timed() {
+        let jst = 9 * 3600;
+        let now = NowContext {
+            utc_secs: parse_timestamp("2026-11-26T21:00:00+09:00", jst).unwrap(),
+            tz_offset: jst,
+            today: (2026, 11, 26),
+        };
+        let state = test_state(
+            r#"{
+              "status": "ok",
+              "updated_at": "2026-11-26T20:55:00+09:00",
+              "events": [
+                {"title": "Finished", "start": "2026-11-26T10:00:00+09:00", "end": "2026-11-26T20:00:00+09:00", "all_day": false, "calendar_id": "s", "calendar_name": "School"},
+                {"title": "Holiday", "start": "2026-11-27", "end": "2026-11-28", "all_day": true, "calendar_id": "p", "calendar_name": "Personal"},
+                {"title": "FarTimed", "start": "2026-11-30T10:00:00+09:00", "end": "2026-11-30T11:00:00+09:00", "all_day": false, "calendar_id": "s", "calendar_name": "School"}
+              ]
+            }"#,
+        );
+
+        let next = compute_next_event(&state, now);
+        assert_eq!(next.text, "11/27 終日 Holiday");
+        assert_eq!(next.calendar_id.as_deref(), Some("p"));
+    }
+
+    #[test]
+    fn next_event_prefers_timed_over_all_day_within_same_day() {
+        let jst = 9 * 3600;
+        let now = NowContext {
+            utc_secs: parse_timestamp("2026-11-26T08:00:00+09:00", jst).unwrap(),
+            tz_offset: jst,
+            today: (2026, 11, 26),
+        };
+        let state = test_state(
+            r#"{
+              "status": "ok",
+              "updated_at": "2026-11-26T07:55:00+09:00",
+              "events": [
+                {"title": "AllDay", "start": "2026-11-26", "end": "2026-11-27", "all_day": true, "calendar_id": "p", "calendar_name": "Personal"},
+                {"title": "Morning", "start": "2026-11-26T09:00:00+09:00", "end": "2026-11-26T10:00:00+09:00", "all_day": false, "calendar_id": "s", "calendar_name": "School"}
+              ]
+            }"#,
+        );
+
+        let next = compute_next_event(&state, now);
+        assert_eq!(next.text, "09:00 Morning");
+        assert_eq!(next.calendar_id.as_deref(), Some("s"));
     }
 }
 
